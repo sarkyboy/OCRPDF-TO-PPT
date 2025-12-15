@@ -345,8 +345,10 @@ pylint ppt_editor_modular/
 
 ## ⭐ Star History
 
+[![Star History Chart](https://api.star-history.com/svg?repos=star-history/star-history&type=date&legend=top-left)](https://www.star-history.com/#star-history/star-history&type=date&legend=top-left)
 如果这个项目对你有帮助，请给一个星标！
 
 ---
 
 *Powered by Python 🐍 | Made with ❤️*
+
