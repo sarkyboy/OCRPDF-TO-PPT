@@ -1,6 +1,5 @@
 name: Build OCR Desktop App
 
-# 触发条件：手动点击触发，或者推送到 main 分支时触发
 on:
   workflow_dispatch:
   push:
@@ -13,40 +12,42 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 同时构建 Windows 和 macOS 版本
         os: [windows-latest, macos-latest]
 
     steps:
     - uses: actions/checkout@v4
 
+    # 修复点：去掉了 cache: 'pip'，防止找不到文件报错
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.9' # 推荐 3.9，兼容性最好
-        cache: 'pip'
+        python-version: '3.9'
+
+    # 增加一个调试步骤：查看当前目录有什么文件（防止是真的缺少文件）
+    - name: List files (Debug)
+      run: |
+        ls -R
+      continue-on-error: true
 
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        # 安装项目依赖
         pip install -r requirements.txt
-        # 安装打包工具和特定的钩子，防止漏掉 PaddleOCR 的文件
         pip install pyinstaller pyinstaller-hooks-contrib
 
     - name: Build with PyInstaller (Windows)
       if: runner.os == 'Windows'
-      # -D: 生成目录(稳定) | -w: 无黑框 | --clean: 清理缓存 | --collect-all: 强行收集OCR库的所有文件
+      # 增加 --hidden-import 确保 PaddleOCR 依赖被正确打包
       run: |
-        pyinstaller -D -w --clean --name="OCR2PPT_Win" --collect-all paddleocr --collect-all paddle run_ppt_editor_improved.py
+        pyinstaller -D -w --clean --name="OCR2PPT_Win" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely run_ppt_editor_improved.py
 
     - name: Build with PyInstaller (macOS)
       if: runner.os == 'macOS'
       run: |
-        pyinstaller -D -w --clean --name="OCR2PPT_Mac" --collect-all paddleocr --collect-all paddle run_ppt_editor_improved.py
+        pyinstaller -D -w --clean --name="OCR2PPT_Mac" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely run_ppt_editor_improved.py
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: OCR2PPT_${{ matrix.os }}
-        # 上传 dist 目录下的生成结果
         path: dist/
