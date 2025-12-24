@@ -1,9 +1,14 @@
-name: Build OCR Desktop App
+name: Build and Release
 
+# 触发条件修改：只有当推送标签（如 v1.0）时触发
 on:
-  workflow_dispatch:
   push:
-    branches: [ "main" ]
+    tags:
+      - 'v*'
+
+# 必须赋予写权限，否则无法创建 Release
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -17,41 +22,26 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # --- Windows 解压 (保持不变) ---
+    # --- 解压步骤 (保持之前的修复) ---
     - name: Unrar Code (Windows)
       if: runner.os == 'Windows'
       shell: cmd
-      run: |
-        7z x ppt_editor_ocr.rar -y -oextracted_code
+      run: 7z x ppt_editor_ocr.rar -y -oextracted_code
 
-    # --- macOS 解压 (修复：改用 unar) ---
     - name: Unrar Code (macOS)
       if: runner.os == 'macOS'
       run: |
-        # 安装 unar (The Unarchiver)
         brew install unar
-        # 创建目录
         mkdir -p extracted_code
-        # 解压命令：-o 指定输出目录, -f 强制覆盖
         unar -o extracted_code -f ppt_editor_ocr.rar
 
-    # --- 后续步骤保持不变 ---
+    # --- 定位目录 (保持不变) ---
     - name: Locate Project Root
       id: locate_root
       shell: bash
       run: |
-        echo "Searching for requirements.txt in extracted files..."
-        # 查找 requirements.txt
         TARGET_FILE=$(find extracted_code -name requirements.txt | head -n 1)
-        
-        if [ -z "$TARGET_FILE" ]; then
-          echo "Error: Still could not find requirements.txt after unrar!"
-          ls -R extracted_code
-          exit 1
-        fi
-        
         PROJECT_ROOT=$(dirname "$TARGET_FILE")
-        echo "Found project root at: $PROJECT_ROOT"
         echo "PROJECT_ROOT=$PROJECT_ROOT" >> $GITHUB_ENV
 
     - name: Set up Python
@@ -59,6 +49,7 @@ jobs:
       with:
         python-version: '3.9'
 
+    # --- 安装依赖 ---
     - name: Install Dependencies
       shell: bash
       working-directory: ${{ env.PROJECT_ROOT }}
@@ -67,25 +58,41 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller pyinstaller-hooks-contrib
 
-    - name: Build with PyInstaller (Windows)
+    # --- Windows 编译 & 压缩 ---
+    - name: Build & Zip (Windows)
       if: runner.os == 'Windows'
       shell: bash
       working-directory: ${{ env.PROJECT_ROOT }}
       run: |
         SCRIPT_PATH=$(find . -name run_ppt_editor_improved.py | head -n 1)
+        # 1. 编译
         pyinstaller -D -w --clean --name="OCR2PPT_Win" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely "$SCRIPT_PATH"
+        # 2. 压缩 (使用 7z)
+        # 进入 dist 目录打包，这样解压出来就是文件夹，不会多一层 dist
+        cd dist
+        7z a -r ../OCR2PPT_Windows.zip OCR2PPT_Win
 
-    - name: Build with PyInstaller (macOS)
+    # --- macOS 编译 & 压缩 ---
+    - name: Build & Zip (macOS)
       if: runner.os == 'macOS'
       shell: bash
       working-directory: ${{ env.PROJECT_ROOT }}
       run: |
         SCRIPT_PATH=$(find . -name run_ppt_editor_improved.py | head -n 1)
-        # unar 解压可能会产生多层目录，find 命令会自动处理
+        # 1. 编译
         pyinstaller -D -w --clean --name="OCR2PPT_Mac" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely "$SCRIPT_PATH"
+        # 2. 压缩 (使用 zip)
+        cd dist
+        zip -r ../OCR2PPT_macOS.zip OCR2PPT_Mac.app OCR2PPT_Mac
 
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
+    # --- 发布到 Release 页面 ---
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
       with:
-        name: OCR2PPT_${{ matrix.os }}
-        path: ${{ env.PROJECT_ROOT }}/dist/
+        # 上传刚才压缩好的 zip 文件
+        files: |
+          ${{ env.PROJECT_ROOT }}/OCR2PPT_Windows.zip
+          ${{ env.PROJECT_ROOT }}/OCR2PPT_macOS.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
