@@ -17,28 +17,31 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # --- Windows 解压 (保持不变，因为你那边成功了) ---
+    # --- Windows 解压 (保持不变) ---
     - name: Unrar Code (Windows)
       if: runner.os == 'Windows'
       shell: cmd
       run: |
         7z x ppt_editor_ocr.rar -y -oextracted_code
 
-    # --- macOS 解压 (修复：改用 unrar 官方工具) ---
+    # --- macOS 解压 (修复：改用 unar) ---
     - name: Unrar Code (macOS)
       if: runner.os == 'macOS'
       run: |
-        brew install unrar
+        # 安装 unar (The Unarchiver)
+        brew install unar
+        # 创建目录
         mkdir -p extracted_code
-        # unrar x <文件> <路径/> (注意路径后面要有斜杠)
-        unrar x ppt_editor_ocr.rar extracted_code/
+        # 解压命令：-o 指定输出目录, -f 强制覆盖
+        unar -o extracted_code -f ppt_editor_ocr.rar
 
-    # --- 后续步骤保持逻辑不变 ---
+    # --- 后续步骤保持不变 ---
     - name: Locate Project Root
       id: locate_root
       shell: bash
       run: |
         echo "Searching for requirements.txt in extracted files..."
+        # 查找 requirements.txt
         TARGET_FILE=$(find extracted_code -name requirements.txt | head -n 1)
         
         if [ -z "$TARGET_FILE" ]; then
@@ -78,7 +81,7 @@ jobs:
       working-directory: ${{ env.PROJECT_ROOT }}
       run: |
         SCRIPT_PATH=$(find . -name run_ppt_editor_improved.py | head -n 1)
-        # Mac 不需要 collect shapely 通常能自动识别，但为了保险保留
+        # unar 解压可能会产生多层目录，find 命令会自动处理
         pyinstaller -D -w --clean --name="OCR2PPT_Mac" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely "$SCRIPT_PATH"
 
     - name: Upload Artifacts
