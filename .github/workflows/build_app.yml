@@ -16,13 +16,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows 版本
+          # Windows 版本 (保持不变)
           - os: windows-latest
             name: Windows
             zip_name: OCR2PPT_Windows.zip
             
-          # macOS Intel 版本 (使用 macos-13 强制指定 Intel 环境)
-          - os: macos-13
+          # macOS Intel 版本
+          # 修正：从 macos-13 改为 macos-15-intel
+          # 这是目前 GitHub 唯一支持 Intel 架构的构建环境
+          - os: macos-15-intel
             name: Mac_Intel
             zip_name: OCR2PPT_Mac_Intel.zip
 
@@ -84,7 +86,7 @@ jobs:
       working-directory: ${{ env.PROJECT_ROOT }}
       run: |
         SCRIPT_PATH=$(find . -name run_ppt_editor_improved.py | head -n 1)
-        # 这里的 PyInstaller 会在 Intel 环境下运行，生成 Intel 二进制文件
+        # 这里的 PyInstaller 会在 macos-15-intel 环境下运行，生成 Intel 二进制文件
         pyinstaller -D -w --clean --name="OCR2PPT_Mac" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely "$SCRIPT_PATH"
         cd dist
         zip -r ../${{ matrix.zip_name }} OCR2PPT_Mac.app OCR2PPT_Mac
