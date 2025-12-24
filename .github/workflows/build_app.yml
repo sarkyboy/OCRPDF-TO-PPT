@@ -17,17 +17,32 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    # 1. 新增：聪明地查找项目真正的根目录
+    # 1. 解压 RAR 文件 (这是之前缺少的关键步骤)
+    - name: Unrar Code (Windows)
+      if: runner.os == 'Windows'
+      shell: cmd
+      # Windows 环境默认自带 7z
+      run: |
+        7z x ppt_editor_ocr.rar -y -oextracted_code
+
+    - name: Unrar Code (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install sevenzip
+        7zz x ppt_editor_ocr.rar -y -oextracted_code
+
+    # 2. 定位解压后的项目根目录
     - name: Locate Project Root
       id: locate_root
       shell: bash
       run: |
-        echo "Searching for requirements.txt..."
-        # 查找 requirements.txt 所在的目录
-        TARGET_FILE=$(find . -name requirements.txt | head -n 1)
+        echo "Searching for requirements.txt in extracted files..."
+        # 在解压目录中查找 requirements.txt
+        TARGET_FILE=$(find extracted_code -name requirements.txt | head -n 1)
+        
         if [ -z "$TARGET_FILE" ]; then
-          echo "Error: Could not find requirements.txt anywhere!"
-          find . -maxdepth 3 # 打印目录结构方便调试
+          echo "Error: Still could not find requirements.txt after unrar!"
+          ls -R extracted_code
           exit 1
         fi
         
@@ -35,7 +50,7 @@ jobs:
         PROJECT_ROOT=$(dirname "$TARGET_FILE")
         echo "Found project root at: $PROJECT_ROOT"
         
-        # 将路径保存为环境变量，供后面步骤使用
+        # 将路径保存为环境变量
         echo "PROJECT_ROOT=$PROJECT_ROOT" >> $GITHUB_ENV
 
     - name: Set up Python
@@ -43,40 +58,39 @@ jobs:
       with:
         python-version: '3.9'
 
-    # 2. 安装依赖：进入找到的目录去安装
+    # 3. 安装依赖 (在找到的目录中运行)
     - name: Install Dependencies
       shell: bash
       working-directory: ${{ env.PROJECT_ROOT }}
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        # 安装 pyinstaller 和相关钩子
         pip install pyinstaller pyinstaller-hooks-contrib
 
-    # 3. Windows 打包：自动寻找启动脚本
+    # 4. Windows 打包
     - name: Build with PyInstaller (Windows)
       if: runner.os == 'Windows'
       shell: bash
       working-directory: ${{ env.PROJECT_ROOT }}
-      # 使用 find 命令动态查找启动脚本，防止路径写死
       run: |
         SCRIPT_PATH=$(find . -name run_ppt_editor_improved.py | head -n 1)
-        echo "Building script: $SCRIPT_PATH"
+        # 增加 --hidden-import 以防万一
         pyinstaller -D -w --clean --name="OCR2PPT_Win" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely "$SCRIPT_PATH"
 
-    # 4. macOS 打包：自动寻找启动脚本
+    # 5. macOS 打包
     - name: Build with PyInstaller (macOS)
       if: runner.os == 'macOS'
       shell: bash
       working-directory: ${{ env.PROJECT_ROOT }}
       run: |
         SCRIPT_PATH=$(find . -name run_ppt_editor_improved.py | head -n 1)
-        echo "Building script: $SCRIPT_PATH"
         pyinstaller -D -w --clean --name="OCR2PPT_Mac" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely "$SCRIPT_PATH"
 
-    # 5. 上传结果
+    # 6. 上传结果
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: OCR2PPT_${{ matrix.os }}
-        # 注意：dist 文件夹也会生成在项目根目录里
+        # 注意：dist 文件夹在解压后的目录里
         path: ${{ env.PROJECT_ROOT }}/dist/
