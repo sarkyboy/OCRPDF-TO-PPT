@@ -1,33 +1,41 @@
 name: Build and Release
 
-# 触发条件修改：只有当推送标签（如 v1.0）时触发
 on:
   push:
     tags:
       - 'v*'
 
-# 必须赋予写权限，否则无法创建 Release
 permissions:
   contents: write
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build for ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          # Windows 版本
+          - os: windows-latest
+            name: Windows
+            zip_name: OCR2PPT_Windows.zip
+            
+          # macOS Intel 版本 (使用 macos-13 强制指定 Intel 环境)
+          - os: macos-13
+            name: Mac_Intel
+            zip_name: OCR2PPT_Mac_Intel.zip
 
     steps:
     - uses: actions/checkout@v4
 
-    # --- 解压步骤 (保持之前的修复) ---
+    # --- Windows 解压 ---
     - name: Unrar Code (Windows)
       if: runner.os == 'Windows'
       shell: cmd
       run: 7z x ppt_editor_ocr.rar -y -oextracted_code
 
+    # --- macOS 解压 ---
     - name: Unrar Code (macOS)
       if: runner.os == 'macOS'
       run: |
@@ -35,7 +43,7 @@ jobs:
         mkdir -p extracted_code
         unar -o extracted_code -f ppt_editor_ocr.rar
 
-    # --- 定位目录 (保持不变) ---
+    # --- 定位目录 ---
     - name: Locate Project Root
       id: locate_root
       shell: bash
@@ -65,34 +73,27 @@ jobs:
       working-directory: ${{ env.PROJECT_ROOT }}
       run: |
         SCRIPT_PATH=$(find . -name run_ppt_editor_improved.py | head -n 1)
-        # 1. 编译
         pyinstaller -D -w --clean --name="OCR2PPT_Win" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely "$SCRIPT_PATH"
-        # 2. 压缩 (使用 7z)
-        # 进入 dist 目录打包，这样解压出来就是文件夹，不会多一层 dist
         cd dist
-        7z a -r ../OCR2PPT_Windows.zip OCR2PPT_Win
+        7z a -r ../${{ matrix.zip_name }} OCR2PPT_Win
 
-    # --- macOS 编译 & 压缩 ---
+    # --- macOS 编译 & 压缩 (Intel) ---
     - name: Build & Zip (macOS)
       if: runner.os == 'macOS'
       shell: bash
       working-directory: ${{ env.PROJECT_ROOT }}
       run: |
         SCRIPT_PATH=$(find . -name run_ppt_editor_improved.py | head -n 1)
-        # 1. 编译
+        # 这里的 PyInstaller 会在 Intel 环境下运行，生成 Intel 二进制文件
         pyinstaller -D -w --clean --name="OCR2PPT_Mac" --collect-all paddleocr --collect-all paddle --collect-all pyclipper --collect-all shapely "$SCRIPT_PATH"
-        # 2. 压缩 (使用 zip)
         cd dist
-        zip -r ../OCR2PPT_macOS.zip OCR2PPT_Mac.app OCR2PPT_Mac
+        zip -r ../${{ matrix.zip_name }} OCR2PPT_Mac.app OCR2PPT_Mac
 
-    # --- 发布到 Release 页面 ---
+    # --- 发布 ---
     - name: Release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        # 上传刚才压缩好的 zip 文件
-        files: |
-          ${{ env.PROJECT_ROOT }}/OCR2PPT_Windows.zip
-          ${{ env.PROJECT_ROOT }}/OCR2PPT_macOS.zip
+        files: ${{ env.PROJECT_ROOT }}/${{ matrix.zip_name }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
